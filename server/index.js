@@ -4,6 +4,8 @@ import { WebSocketServer } from 'ws';
 import { createServer } from 'http';
 import dotenv from 'dotenv';
 import rateLimit from 'express-rate-limit';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import athleteRoutes from './routes/athletes.js';
 import teamRoutes from './routes/teams.js';
 import draftRoutes from './routes/draft.js';
@@ -12,6 +14,9 @@ import importRoutes from './routes/import-improved.js';
 import debugRoutes from './routes/debug.js';
 import rankingsRoutes from './routes/rankings.js';
 import liveRaceRoutes from './routes/live-race.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 dotenv.config();
 
@@ -50,6 +55,17 @@ app.use('/api/live-race', liveRaceRoutes);
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Serve static files from client build in production
+if (process.env.NODE_ENV === 'production') {
+  const clientBuildPath = path.join(__dirname, '../client/dist');
+  app.use(express.static(clientBuildPath));
+
+  // Handle client-side routing - serve index.html for all non-API routes
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
+  });
+}
 
 // Create HTTP server for WebSocket
 const server = createServer(app);
