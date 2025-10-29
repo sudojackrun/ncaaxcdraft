@@ -1,0 +1,428 @@
+import { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+
+function MeetDetail() {
+  const { id } = useParams();
+  const [meet, setMeet] = useState(null);
+  const [athletes, setAthletes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddResult, setShowAddResult] = useState(false);
+  const [activeTab, setActiveTab] = useState('men'); // 'men' or 'women'
+  const [selectedRaceIndex, setSelectedRaceIndex] = useState(0); // Which race within the gender
+  const [newResult, setNewResult] = useState({
+    athlete_id: '',
+    place: '',
+    time: ''
+  });
+
+  useEffect(() => {
+    loadMeet();
+    loadAthletes();
+  }, [id]);
+
+  const loadMeet = async () => {
+    try {
+      const res = await fetch(`/api/meets/${id}`);
+      const data = await res.json();
+      setMeet(data);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error loading meet:', error);
+      setLoading(false);
+    }
+  };
+
+  const loadAthletes = async () => {
+    try {
+      const res = await fetch('/api/athletes');
+      const data = await res.json();
+      setAthletes(data);
+    } catch (error) {
+      console.error('Error loading athletes:', error);
+    }
+  };
+
+  const addResult = async (e) => {
+    e.preventDefault();
+
+    // Convert time to seconds
+    const [minutes, seconds] = newResult.time.split(':').map(Number);
+    const time_seconds = minutes * 60 + seconds;
+
+    try {
+      await fetch(`/api/meets/${id}/results`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          athlete_id: parseInt(newResult.athlete_id),
+          place: parseInt(newResult.place),
+          time: newResult.time,
+          time_seconds
+        })
+      });
+
+      setShowAddResult(false);
+      setNewResult({ athlete_id: '', place: '', time: '' });
+      loadMeet();
+    } catch (error) {
+      console.error('Error adding result:', error);
+      alert('Failed to add result');
+    }
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  console.log('MeetDetail render:', { loading, meet: meet ? 'loaded' : 'null' });
+
+  if (loading) {
+    return <div className="loading">Loading meet...</div>;
+  }
+
+  if (!meet) {
+    return <div className="container"><div className="card">Meet not found</div></div>;
+  }
+
+  // Separate results by gender and detect multiple races within each gender
+  const separateIntoRaces = (results) => {
+    if (!results || results.length === 0) return [];
+
+    // Group by place number - if we have duplicate place numbers, they're different races
+    const placeGroups = {};
+    results.forEach(result => {
+      if (!placeGroups[result.place]) {
+        placeGroups[result.place] = [];
+      }
+      placeGroups[result.place].push(result);
+    });
+
+    // If any place has multiple athletes, we have multiple races
+    const hasDuplicatePlaces = Object.values(placeGroups).some(group => group.length > 1);
+
+    if (!hasDuplicatePlaces) {
+      // Single race
+      return [{
+        name: 'Championship',
+        results: results.sort((a, b) => a.place - b.place)
+      }];
+    }
+
+    // Multiple races detected - use clustering by time to separate them
+    // Sort all results by time
+    const sortedByTime = [...results].sort((a, b) => {
+      const timeA = a.time_seconds || parseTimeToSeconds(a.time);
+      const timeB = b.time_seconds || parseTimeToSeconds(b.time);
+      return timeA - timeB;
+    });
+
+    // Assign each runner to a race cluster based on time proximity
+    const races = [];
+    const assigned = new Set();
+
+    sortedByTime.forEach(result => {
+      if (assigned.has(result.id)) return;
+
+      const currentTime = result.time_seconds || parseTimeToSeconds(result.time);
+      const raceCluster = [result];
+      assigned.add(result.id);
+
+      // Find all runners with the same place number (they're in different races)
+      const samePlaceRunners = placeGroups[result.place].filter(r => r.id !== result.id);
+
+      // For each runner with same place, find which race they belong to by time proximity
+      sortedByTime.forEach(other => {
+        if (assigned.has(other.id)) return;
+
+        const otherTime = other.time_seconds || parseTimeToSeconds(other.time);
+        const timeDiff = Math.abs(otherTime - currentTime);
+
+        // If within 3 minutes of any runner in this cluster, add to cluster
+        const isInCluster = raceCluster.some(r => {
+          const rTime = r.time_seconds || parseTimeToSeconds(r.time);
+          return Math.abs(otherTime - rTime) < 180; // 3 minutes
+        });
+
+        if (isInCluster) {
+          raceCluster.push(other);
+          assigned.add(other.id);
+        }
+      });
+
+      races.push(raceCluster);
+    });
+
+    // Sort races by average time (fastest race first)
+    races.sort((a, b) => {
+      const avgTimeA = a.reduce((sum, r) => sum + (r.time_seconds || parseTimeToSeconds(r.time)), 0) / a.length;
+      const avgTimeB = b.reduce((sum, r) => sum + (r.time_seconds || parseTimeToSeconds(r.time)), 0) / b.length;
+      return avgTimeA - avgTimeB;
+    });
+
+    // Name the races and sort results within each race
+    return races.map((race, index) => {
+      const raceName = index === 0 ? 'Championship' :
+                       index === 1 ? 'B Race' :
+                       index === 2 ? 'C Race' :
+                       `Race ${index + 1}`;
+
+      return {
+        name: raceName,
+        results: race.sort((a, b) => a.place - b.place)
+      };
+    });
+  };
+
+  const parseTimeToSeconds = (timeStr) => {
+    const parts = timeStr.split(':');
+    if (parts.length === 2) {
+      return parseInt(parts[0]) * 60 + parseFloat(parts[1]);
+    }
+    return 0;
+  };
+
+  const menRaces = separateIntoRaces(meet.results ? meet.results.filter(r => r.gender === 'M') : []);
+  const womenRaces = separateIntoRaces(meet.results ? meet.results.filter(r => r.gender === 'F') : []);
+
+  // Calculate team scores (top 5 runners per team)
+  const calculateTeamScores = (results) => {
+    const teamScores = {};
+
+    results.forEach((result, index) => {
+      const school = result.school;
+      if (!teamScores[school]) {
+        teamScores[school] = {
+          name: school,
+          runners: [],
+          score: 0,
+          complete: false
+        };
+      }
+
+      // Only count first 5 runners for score
+      if (teamScores[school].runners.length < 5) {
+        teamScores[school].runners.push({
+          place: result.place,
+          name: result.name,
+          time: result.time
+        });
+        teamScores[school].score += result.place;
+      } else if (teamScores[school].runners.length < 7) {
+        // 6th and 7th runners (displacement)
+        teamScores[school].runners.push({
+          place: result.place,
+          name: result.name,
+          time: result.time,
+          isDisplacement: true
+        });
+      }
+
+      if (teamScores[school].runners.length >= 5) {
+        teamScores[school].complete = true;
+      }
+    });
+
+    // Convert to array and sort by score (lower is better)
+    return Object.values(teamScores)
+      .filter(team => team.complete)
+      .sort((a, b) => a.score - b.score);
+  };
+
+  const currentRaces = activeTab === 'men' ? menRaces : womenRaces;
+
+  // Reset race index when switching gender tabs or when races change
+  useEffect(() => {
+    if (currentRaces.length > 0 && selectedRaceIndex >= currentRaces.length) {
+      setSelectedRaceIndex(0);
+    }
+  }, [activeTab, currentRaces.length, selectedRaceIndex]);
+
+  return (
+    <div className="container">
+      <div className="card">
+        <div className="card-header">
+          <div className="flex-between">
+            <div>
+              <h1 className="card-title">{meet.name}</h1>
+              <p className="text-muted">
+                {formatDate(meet.date)} | {meet.location} | {meet.distance}
+              </p>
+              <p>
+                <span className={`badge badge-${
+                  meet.status === 'completed' ? 'success' :
+                  meet.status === 'in_progress' ? 'warning' : 'info'
+                }`}>
+                  {meet.status}
+                </span>
+              </p>
+            </div>
+            <Link to="/meets" className="btn btn-secondary">Back to Meets</Link>
+          </div>
+        </div>
+
+        {/* Gender Tabs */}
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '2px solid #e0e0e0' }}>
+          <button
+            onClick={() => setActiveTab('men')}
+            style={{
+              padding: '0.75rem 1.5rem',
+              border: 'none',
+              background: activeTab === 'men' ? 'var(--forest-green)' : 'transparent',
+              color: activeTab === 'men' ? 'white' : '#666',
+              fontSize: '1.1rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              borderBottom: activeTab === 'men' ? '3px solid var(--burnt-orange)' : 'none',
+              transition: 'all 0.2s'
+            }}
+          >
+            Men ({menRaces.reduce((sum, race) => sum + race.results.length, 0)})
+          </button>
+          <button
+            onClick={() => setActiveTab('women')}
+            style={{
+              padding: '0.75rem 1.5rem',
+              border: 'none',
+              background: activeTab === 'women' ? 'var(--forest-green)' : 'transparent',
+              color: activeTab === 'women' ? 'white' : '#666',
+              fontSize: '1.1rem',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              borderBottom: activeTab === 'women' ? '3px solid var(--burnt-orange)' : 'none',
+              transition: 'all 0.2s'
+            }}
+          >
+            Women ({womenRaces.reduce((sum, race) => sum + race.results.length, 0)})
+          </button>
+        </div>
+
+        {/* Race Selection Tabs (if multiple races) */}
+        {currentRaces.length > 1 && (
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+            {currentRaces.map((race, index) => (
+              <button
+                key={index}
+                onClick={() => setSelectedRaceIndex(index)}
+                style={{
+                  padding: '0.5rem 1rem',
+                  border: selectedRaceIndex === index ? '2px solid var(--burnt-orange)' : '1px solid #ccc',
+                  background: selectedRaceIndex === index ? 'var(--burnt-orange)' : 'white',
+                  color: selectedRaceIndex === index ? 'white' : '#333',
+                  fontSize: '1rem',
+                  fontWeight: selectedRaceIndex === index ? 'bold' : 'normal',
+                  cursor: 'pointer',
+                  borderRadius: '6px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                {race.name} ({race.results.length})
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Show selected race */}
+        {currentRaces.length > 0 ? (
+          (() => {
+            const race = currentRaces[selectedRaceIndex] || currentRaces[0];
+            if (!race || !race.results) return null;
+
+            const teamScores = calculateTeamScores(race.results);
+
+            return (
+              <div>
+                {/* Race Title */}
+                <div style={{
+                  background: 'var(--forest-green)',
+                  color: 'white',
+                  padding: '1rem 1.5rem',
+                  borderRadius: '8px',
+                  marginBottom: '1rem'
+                }}>
+                  <h2 style={{ margin: 0, color: 'white' }}>
+                    {race.name} ({race.results.length} runners)
+                  </h2>
+                </div>
+
+                {/* Team Scores for this race */}
+                {teamScores.length > 0 && (
+                  <div className="card" style={{ background: '#f8f9fa', marginBottom: '1rem' }}>
+                    <h3 style={{ marginBottom: '1rem' }}>Team Scores</h3>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Place</th>
+                          <th>Team</th>
+                          <th>Score</th>
+                          <th>Runners (Places)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teamScores.map((team, index) => (
+                          <tr key={team.name}>
+                            <td><strong>{index + 1}</strong></td>
+                            <td><strong>{team.name}</strong></td>
+                            <td><strong>{team.score}</strong></td>
+                            <td>
+                              {team.runners.slice(0, 5).map((runner, i) => (
+                                <span key={i} style={{ marginRight: '0.5rem' }}>
+                                  {runner.place}
+                                  {i < 4 ? ',' : ''}
+                                </span>
+                              ))}
+                              {team.runners.length > 5 && (
+                                <span style={{ color: '#999' }}>
+                                  {' '}({team.runners.slice(5).map(r => r.place).join(', ')})
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* Individual Results for this race */}
+                <h3 style={{ marginBottom: '1rem' }}>Individual Results</h3>
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Place</th>
+                      <th>Name</th>
+                      <th>Year</th>
+                      <th>Team</th>
+                      <th>Time</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {race.results.map(result => (
+                      <tr key={result.id}>
+                        <td><strong>{result.place}</strong></td>
+                        <td><strong>{result.name}</strong></td>
+                        <td>{result.grade || '-'}</td>
+                        <td>{result.school}</td>
+                        <td>{result.time}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()
+        ) : (
+          <div className="text-center text-muted" style={{ padding: '2rem' }}>
+            No {activeTab === 'men' ? "men's" : "women's"} results for this meet.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default MeetDetail;
