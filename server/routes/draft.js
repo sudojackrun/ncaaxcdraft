@@ -17,6 +17,7 @@ function broadcastDraftUpdate(draftId, data) {
 // Get all drafts
 router.get('/', async (req, res) => {
   try {
+    console.log('📋 Getting all drafts...');
     const drafts = await db.prepare(`
       SELECT d.*, COUNT(DISTINCT t.id) as team_count
       FROM drafts d
@@ -25,8 +26,10 @@ router.get('/', async (req, res) => {
       ORDER BY d.created_at DESC
     `).all();
 
+    console.log('✅ Found', drafts.length, 'drafts');
     res.json(drafts);
   } catch (error) {
+    console.error('❌ Error getting drafts:', error);
     res.status(500).json({ error: error.message });
   }
 });
