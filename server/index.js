@@ -23,6 +23,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust proxy - required for Heroku
+app.set('trust proxy', 1);
+
 // Rate limiting - 1000 requests per 15 minutes (increased for development)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
