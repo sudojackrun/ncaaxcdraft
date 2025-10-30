@@ -7,12 +7,12 @@ const router = express.Router();
  * Calculate and update athlete rankings based on PR times
  * Rankings are gender-specific and based on best PR across all distances
  */
-router.post('/calculate', (req, res) => {
+router.post('/calculate', async (req, res) => {
   try {
     console.log('Calculating athlete rankings...');
 
     // Get all athletes with their best times
-    const athletes = db.prepare(`
+    const athletes = await db.prepare(`
       SELECT
         id,
         name,
@@ -57,30 +57,30 @@ router.post('/calculate', (req, res) => {
     const genders = ['M', 'F'];
     let totalRanked = 0;
 
-    genders.forEach(gender => {
+    for (const gender of genders) {
       // Get athletes of this gender with valid times
       const genderAthletes = athletesWithScores
         .filter(a => a.gender === gender && a.normalized5K !== null)
         .sort((a, b) => a.normalized5K - b.normalized5K); // Fastest first
 
       // Assign rankings
-      genderAthletes.forEach((athlete, index) => {
+      for (const [index, athlete] of genderAthletes.entries()) {
         const ranking = index + 1;
 
-        db.prepare(`
+        await db.prepare(`
           UPDATE athletes
           SET ranking = ?
           WHERE id = ?
         `).run(ranking, athlete.id);
 
         totalRanked++;
-      });
+      }
 
       console.log(`Ranked ${genderAthletes.length} ${gender} athletes`);
-    });
+    }
 
     // Set ranking to NULL for athletes without any PR
-    db.prepare(`
+    await db.prepare(`
       UPDATE athletes
       SET ranking = NULL
       WHERE pr_5k_seconds IS NULL
@@ -105,7 +105,7 @@ router.post('/calculate', (req, res) => {
 /**
  * Get top ranked athletes
  */
-router.get('/top', (req, res) => {
+router.get('/top', async (req, res) => {
   try {
     const { gender, limit = 50 } = req.query;
 
@@ -128,7 +128,7 @@ router.get('/top', (req, res) => {
     query += ' ORDER BY ranking ASC LIMIT ?';
     params.push(parseInt(limit));
 
-    const topAthletes = db.prepare(query).all(...params);
+    const topAthletes = await db.prepare(query).all(...params);
 
     res.json(topAthletes);
   } catch (error) {

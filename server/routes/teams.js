@@ -4,7 +4,7 @@ import db from '../db/database.js';
 const router = express.Router();
 
 // Get all teams
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { draftId } = req.query;
     let query = 'SELECT * FROM teams';
@@ -15,7 +15,7 @@ router.get('/', (req, res) => {
       params.push(draftId);
     }
 
-    const teams = db.prepare(query).all(...params);
+    const teams = await db.prepare(query).all(...params);
     res.json(teams);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -23,9 +23,9 @@ router.get('/', (req, res) => {
 });
 
 // Get single team with roster
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const team = db.prepare('SELECT * FROM teams WHERE id = ?').get(req.params.id);
+    const team = await db.prepare('SELECT * FROM teams WHERE id = ?').get(req.params.id);
     if (!team) {
       return res.status(404).json({ error: 'Team not found' });
     }
@@ -33,7 +33,7 @@ router.get('/:id', (req, res) => {
     console.log(`Fetching roster for team ${req.params.id}...`);
 
     // Get team's drafted athletes
-    const roster = db.prepare(`
+    const roster = await db.prepare(`
       SELECT a.*, dp.round, dp.pick_number, dp.overall_pick
       FROM athletes a
       JOIN draft_picks dp ON a.id = dp.athlete_id
@@ -44,9 +44,9 @@ router.get('/:id', (req, res) => {
     console.log(`Found ${roster.length} athletes on roster`);
 
     // For each athlete, get all their race results
-    const rosterWithResults = roster.map(athlete => {
+    const rosterWithResults = await Promise.all(roster.map(async athlete => {
       try {
-        const results = db.prepare(`
+        const results = await db.prepare(`
           SELECT r.*, m.name as meet_name, m.date as meet_date, m.distance
           FROM results r
           JOIN meets m ON r.meet_id = m.id
@@ -96,7 +96,7 @@ router.get('/:id', (req, res) => {
           allResults: { '5K': [], '6K': [], '8K': [], '10K': [] }
         };
       }
-    });
+    }));
 
     console.log(`Returning ${rosterWithResults.length} athletes with results`);
     res.json({ ...team, roster: rosterWithResults });
@@ -107,16 +107,16 @@ router.get('/:id', (req, res) => {
 });
 
 // Create team
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { name, owner_name, draft_id } = req.body;
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO teams (name, owner_name, draft_id)
       VALUES (?, ?, ?)
     `).run(name, owner_name, draft_id);
 
-    const newTeam = db.prepare('SELECT * FROM teams WHERE id = ?').get(result.lastInsertRowid);
+    const newTeam = await db.prepare('SELECT * FROM teams WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(newTeam);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -124,9 +124,9 @@ router.post('/', (req, res) => {
 });
 
 // Get team standings for a draft
-router.get('/standings/:draftId', (req, res) => {
+router.get('/standings/:draftId', async (req, res) => {
   try {
-    const standings = db.prepare(`
+    const standings = await db.prepare(`
       SELECT
         t.id,
         t.name,

@@ -25,7 +25,7 @@ router.post('/meet', async (req, res) => {
     const meetData = await scrapeMeetResults(meetUrl);
 
     // Create meet in database
-    const meetResult = db.prepare(`
+    const meetResult = await db.prepare(`
       INSERT INTO meets (name, date, location, distance, status)
       VALUES (?, ?, ?, ?, ?)
     `).run(
@@ -43,11 +43,11 @@ router.post('/meet', async (req, res) => {
     // Import results
     for (const result of meetData.results) {
       // Check if athlete exists, if not create them
-      let athlete = db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
+      let athlete = await db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
         .get(result.name, result.school);
 
       if (!athlete) {
-        const athleteResult = db.prepare(`
+        const athleteResult = await db.prepare(`
           INSERT INTO athletes (name, school, gender, pr_5k, pr_5k_seconds, tfrrs_url)
           VALUES (?, ?, ?, ?, ?, ?)
         `).run(
@@ -64,7 +64,7 @@ router.post('/meet', async (req, res) => {
       } else {
         // Update PR if this time is better
         if (result.timeSeconds && result.timeSeconds < (athlete.pr_5k_seconds || Infinity)) {
-          db.prepare(`
+          await db.prepare(`
             UPDATE athletes
             SET pr_5k = ?, pr_5k_seconds = ?, tfrrs_url = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -74,7 +74,7 @@ router.post('/meet', async (req, res) => {
 
       // Add result
       try {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO results (meet_id, athlete_id, place, time, time_seconds)
           VALUES (?, ?, ?, ?, ?)
         `).run(meetId, athlete.id, result.place, result.time, result.timeSeconds);
@@ -118,12 +118,12 @@ router.post('/athlete', async (req, res) => {
     const athleteData = await scrapeAthleteProfile(athleteUrl);
 
     // Check if athlete exists
-    let athlete = db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
+    let athlete = await db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
       .get(athleteData.name, athleteData.school);
 
     if (athlete) {
       // Update existing athlete
-      db.prepare(`
+      await db.prepare(`
         UPDATE athletes
         SET
           pr_5k = COALESCE(?, pr_5k),
@@ -141,7 +141,7 @@ router.post('/athlete', async (req, res) => {
       res.json({ success: true, updated: true, athleteId: athlete.id });
     } else {
       // Create new athlete
-      const result = db.prepare(`
+      const result = await db.prepare(`
         INSERT INTO athletes (name, school, pr_5k, tfrrs_url)
         VALUES (?, ?, ?, ?)
       `).run(
@@ -164,7 +164,7 @@ router.post('/athlete', async (req, res) => {
  * Get predefined TFRRS meet URLs for 2024 season
  * GET /api/import/meets/2024
  */
-router.get('/meets/2024', (req, res) => {
+router.get('/meets/2024', async (req, res) => {
   const meets = Object.entries(TFRRS_MEETS_2024).map(([key, url]) => ({
     id: key,
     name: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
@@ -195,7 +195,7 @@ router.post('/bulk/2024/:meetKey', async (req, res) => {
     const meetData = await scrapeMeetResults(meetUrl);
 
     // Create meet
-    const meetResult = db.prepare(`
+    const meetResult = await db.prepare(`
       INSERT INTO meets (name, date, location, distance, status)
       VALUES (?, ?, ?, ?, ?)
     `).run(meetName, meetDate, 'NCAA D1', '5K', 'completed');
@@ -206,11 +206,11 @@ router.post('/bulk/2024/:meetKey', async (req, res) => {
 
     // Import all results
     for (const result of meetData.results) {
-      let athlete = db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
+      let athlete = await db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
         .get(result.name, result.school);
 
       if (!athlete) {
-        const athleteResult = db.prepare(`
+        const athleteResult = await db.prepare(`
           INSERT INTO athletes (name, school, pr_5k, pr_5k_seconds, tfrrs_url)
           VALUES (?, ?, ?, ?, ?)
         `).run(result.name, result.school, result.time, result.timeSeconds, result.athleteUrl);
@@ -220,7 +220,7 @@ router.post('/bulk/2024/:meetKey', async (req, res) => {
       }
 
       try {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO results (meet_id, athlete_id, place, time, time_seconds)
           VALUES (?, ?, ?, ?, ?)
         `).run(meetId, athlete.id, result.place, result.time, result.timeSeconds);

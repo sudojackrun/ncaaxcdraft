@@ -4,7 +4,7 @@ import db from '../db/database.js';
 const router = express.Router();
 
 // Get all athletes
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { gender, available, draftId } = req.query;
 
@@ -25,7 +25,7 @@ router.get('/', (req, res) => {
 
     query += ' ORDER BY name ASC';
 
-    const athletes = db.prepare(query).all(...params);
+    const athletes = await db.prepare(query).all(...params);
     res.json(athletes);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -33,9 +33,9 @@ router.get('/', (req, res) => {
 });
 
 // Get single athlete
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const athlete = db.prepare('SELECT * FROM athletes WHERE id = ?').get(req.params.id);
+    const athlete = await db.prepare('SELECT * FROM athletes WHERE id = ?').get(req.params.id);
     if (!athlete) {
       return res.status(404).json({ error: 'Athlete not found' });
     }
@@ -46,16 +46,16 @@ router.get('/:id', (req, res) => {
 });
 
 // Add new athlete
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { name, school, grade, gender, pr_5k, pr_5k_seconds } = req.body;
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO athletes (name, school, grade, gender, pr_5k, pr_5k_seconds)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(name, school, grade, gender, pr_5k, pr_5k_seconds);
 
-    const newAthlete = db.prepare('SELECT * FROM athletes WHERE id = ?').get(result.lastInsertRowid);
+    const newAthlete = await db.prepare('SELECT * FROM athletes WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(newAthlete);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -63,17 +63,17 @@ router.post('/', (req, res) => {
 });
 
 // Update athlete
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   try {
     const { name, school, grade, gender, pr_5k, pr_5k_seconds } = req.body;
 
-    db.prepare(`
+    await db.prepare(`
       UPDATE athletes
       SET name = ?, school = ?, grade = ?, gender = ?, pr_5k = ?, pr_5k_seconds = ?
       WHERE id = ?
     `).run(name, school, grade, gender, pr_5k, pr_5k_seconds, req.params.id);
 
-    const updatedAthlete = db.prepare('SELECT * FROM athletes WHERE id = ?').get(req.params.id);
+    const updatedAthlete = await db.prepare('SELECT * FROM athletes WHERE id = ?').get(req.params.id);
     res.json(updatedAthlete);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -81,9 +81,9 @@ router.put('/:id', (req, res) => {
 });
 
 // Search athletes
-router.get('/search/:query', (req, res) => {
+router.get('/search/:query', async (req, res) => {
   try {
-    const athletes = db.prepare(`
+    const athletes = await db.prepare(`
       SELECT * FROM athletes
       WHERE name LIKE ? OR school LIKE ?
       ORDER BY name ASC
@@ -97,21 +97,21 @@ router.get('/search/:query', (req, res) => {
 });
 
 // Delete single athlete
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const athlete = db.prepare('SELECT * FROM athletes WHERE id = ?').get(req.params.id);
+    const athlete = await db.prepare('SELECT * FROM athletes WHERE id = ?').get(req.params.id);
     if (!athlete) {
       return res.status(404).json({ error: 'Athlete not found' });
     }
 
     // Delete related results first (foreign key)
-    db.prepare('DELETE FROM results WHERE athlete_id = ?').run(req.params.id);
+    await db.prepare('DELETE FROM results WHERE athlete_id = ?').run(req.params.id);
 
     // Delete related draft picks
-    db.prepare('DELETE FROM draft_picks WHERE athlete_id = ?').run(req.params.id);
+    await db.prepare('DELETE FROM draft_picks WHERE athlete_id = ?').run(req.params.id);
 
     // Delete the athlete
-    db.prepare('DELETE FROM athletes WHERE id = ?').run(req.params.id);
+    await db.prepare('DELETE FROM athletes WHERE id = ?').run(req.params.id);
 
     res.json({ message: 'Athlete deleted successfully', athlete });
   } catch (error) {
@@ -120,15 +120,15 @@ router.delete('/:id', (req, res) => {
 });
 
 // Delete all athletes (with optional gender filter)
-router.delete('/', (req, res) => {
+router.delete('/', async (req, res) => {
   try {
     const { gender } = req.query;
 
     let athleteIds;
     if (gender) {
-      athleteIds = db.prepare('SELECT id FROM athletes WHERE gender = ?').all(gender);
+      athleteIds = await db.prepare('SELECT id FROM athletes WHERE gender = ?').all(gender);
     } else {
-      athleteIds = db.prepare('SELECT id FROM athletes').all();
+      athleteIds = await db.prepare('SELECT id FROM athletes').all();
     }
 
     const ids = athleteIds.map(a => a.id);
@@ -139,14 +139,14 @@ router.delete('/', (req, res) => {
 
     // Delete related data first
     const placeholders = ids.map(() => '?').join(',');
-    db.prepare(`DELETE FROM results WHERE athlete_id IN (${placeholders})`).run(...ids);
-    db.prepare(`DELETE FROM draft_picks WHERE athlete_id IN (${placeholders})`).run(...ids);
+    await db.prepare(`DELETE FROM results WHERE athlete_id IN (${placeholders})`).run(...ids);
+    await db.prepare(`DELETE FROM draft_picks WHERE athlete_id IN (${placeholders})`).run(...ids);
 
     // Delete athletes
     if (gender) {
-      db.prepare('DELETE FROM athletes WHERE gender = ?').run(gender);
+      await db.prepare('DELETE FROM athletes WHERE gender = ?').run(gender);
     } else {
-      db.prepare('DELETE FROM athletes').run();
+      await db.prepare('DELETE FROM athletes').run();
     }
 
     res.json({
@@ -159,12 +159,12 @@ router.delete('/', (req, res) => {
 });
 
 // Delete all athletes without grades (likely high school athletes)
-router.post('/delete-no-grade', (req, res) => {
+router.post('/delete-no-grade', async (req, res) => {
   try {
     console.log('\n=== Deleting Athletes Without Grades ===');
 
     // Get count of athletes without grades
-    const athletesWithoutGrade = db.prepare(`
+    const athletesWithoutGrade = await db.prepare(`
       SELECT id, name, school
       FROM athletes
       WHERE grade IS NULL OR grade = ''
@@ -216,7 +216,7 @@ router.post('/delete-no-grade', (req, res) => {
 
 // Migration: Update all athlete grades to reflect current year (2025-2026 season)
 // This assumes most athletes advance one grade level per year
-router.post('/migrate-grades', (req, res) => {
+router.post('/migrate-grades', async (req, res) => {
   try {
     console.log('\n=== Migrating Athlete Grades ===');
 
@@ -228,7 +228,7 @@ router.post('/migrate-grades', (req, res) => {
     };
 
     // Get all athletes with their most recent meet
-    const athletes = db.prepare(`
+    const athletes = await db.prepare(`
       SELECT
         a.id,
         a.name,
@@ -245,12 +245,12 @@ router.post('/migrate-grades', (req, res) => {
     let updatedCount = 0;
     const updates = [];
 
-    athletes.forEach(athlete => {
+    for (const athlete of athletes) {
       // If most recent meet is from 2024 or earlier, advance grade by 1
       if (athlete.most_recent_meet_date && athlete.most_recent_meet_date < '2025-01-01') {
         const newGrade = gradeProgression[athlete.current_grade];
         if (newGrade && newGrade !== athlete.current_grade) {
-          db.prepare(`
+          await db.prepare(`
             UPDATE athletes
             SET grade = ?,
                 updated_at = CURRENT_TIMESTAMP
@@ -267,7 +267,7 @@ router.post('/migrate-grades', (req, res) => {
           updatedCount++;
         }
       }
-    });
+    }
 
     console.log(`Updated ${updatedCount} athlete grades`);
     if (updates.length > 0) {
@@ -291,9 +291,9 @@ router.post('/migrate-grades', (req, res) => {
 
 // Sync athlete grades note - grades are automatically updated based on most recent meet
 // This endpoint is just for information
-router.get('/grade-info', (req, res) => {
+router.get('/grade-info', async (req, res) => {
   try {
-    const info = db.prepare(`
+    const info = await db.prepare(`
       SELECT
         a.id,
         a.name,

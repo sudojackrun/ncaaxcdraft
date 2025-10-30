@@ -22,15 +22,15 @@ router.post('/:draftId/start', async (req, res) => {
     }
 
     // Get draft info and teams
-    const draft = db.prepare('SELECT * FROM drafts WHERE id = ?').get(draftId);
+    const draft = await db.prepare('SELECT * FROM drafts WHERE id = ?').get(draftId);
     if (!draft) {
       return res.status(404).json({ error: 'Draft not found' });
     }
 
     // Get all teams with their rosters
-    const teams = db.prepare('SELECT * FROM teams WHERE draft_id = ?').all(draftId);
-    const teamsWithRosters = teams.map(team => {
-      const roster = db.prepare(`
+    const teams = await db.prepare('SELECT * FROM teams WHERE draft_id = ?').all(draftId);
+    const teamsWithRosters = await Promise.all(teams.map(async team => {
+      const roster = await db.prepare(`
         SELECT a.*
         FROM athletes a
         JOIN draft_picks dp ON a.id = dp.athlete_id
@@ -38,7 +38,7 @@ router.post('/:draftId/start', async (req, res) => {
       `).all(team.id);
 
       return { ...team, roster };
-    });
+    }));
 
     console.log(`Starting live race tracking for draft ${draftId}`);
     console.log(`URL: ${liveResultsUrl}`);
@@ -127,7 +127,7 @@ router.get('/:draftId/status', async (req, res) => {
  * Stop tracking a live race
  * POST /api/live-race/:draftId/stop
  */
-router.post('/:draftId/stop', (req, res) => {
+router.post('/:draftId/stop', async (req, res) => {
   try {
     const { draftId } = req.params;
     const wasTracking = activeRaces.delete(parseInt(draftId));
@@ -146,7 +146,7 @@ router.post('/:draftId/stop', (req, res) => {
  * Get detailed results for a specific team
  * GET /api/live-race/:draftId/team/:teamId
  */
-router.get('/:draftId/team/:teamId', (req, res) => {
+router.get('/:draftId/team/:teamId', async (req, res) => {
   try {
     const { draftId, teamId } = req.params;
     const race = activeRaces.get(parseInt(draftId));
@@ -177,7 +177,7 @@ router.get('/:draftId/team/:teamId', (req, res) => {
  * Debug endpoint: Get raw live results and roster comparison with matching analysis
  * GET /api/live-race/:draftId/debug
  */
-router.get('/:draftId/debug', (req, res) => {
+router.get('/:draftId/debug', async (req, res) => {
   try {
     const { draftId } = req.params;
     const race = activeRaces.get(parseInt(draftId));

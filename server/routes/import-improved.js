@@ -37,7 +37,7 @@ router.post('/meet', async (req, res) => {
       console.log(`Creating meet: ${finalMeetName} on ${finalMeetDate}`);
 
       // Create meet in database with actual race distance
-      const meetResult = db.prepare(`
+      const meetResult = await db.prepare(`
         INSERT INTO meets (name, date, location, distance, status)
         VALUES (?, ?, ?, ?, ?)
       `).run(
@@ -89,7 +89,7 @@ router.post('/meet', async (req, res) => {
 
         console.log(`Importing ${result.name}: ${resultDistance} time ${result.time} -> ${prField.pr}`);
 
-        let athlete = db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
+        let athlete = await db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
           .get(result.name, result.school);
 
         if (!athlete) {
@@ -97,7 +97,7 @@ router.post('/meet', async (req, res) => {
           // Use detected gender from scraper, not config!
           const detectedGender = result.gender || gender || 'M';
 
-          const athleteResult = db.prepare(`
+          const athleteResult = await db.prepare(`
             INSERT INTO athletes (
               name, school, grade, gender,
               ${prField.pr}, ${prField.pr_seconds},
@@ -126,7 +126,7 @@ router.post('/meet', async (req, res) => {
 
           // Check if we should update grade based on most recent meet
           // Get the most recent meet date for this athlete
-          const mostRecentMeet = db.prepare(`
+          const mostRecentMeet = await db.prepare(`
             SELECT MAX(m.date) as latest_date
             FROM results r
             JOIN meets m ON r.meet_id = m.id
@@ -140,7 +140,7 @@ router.post('/meet', async (req, res) => {
 
           if (shouldUpdatePR || shouldUpdateGrade) {
             if (shouldUpdatePR) {
-              db.prepare(`
+              await db.prepare(`
                 UPDATE athletes
                 SET ${prField.pr} = ?,
                     ${prField.pr_seconds} = ?,
@@ -153,7 +153,7 @@ router.post('/meet', async (req, res) => {
               `).run(result.time, result.timeSeconds, meetData.meetName, meetData.meetDate, shouldUpdateGrade ? result.grade : null, result.athleteUrl, athlete.id);
             } else if (shouldUpdateGrade) {
               // Only update grade (no PR update needed)
-              db.prepare(`
+              await db.prepare(`
                 UPDATE athletes
                 SET grade = ?,
                     tfrrs_url = ?,
@@ -167,7 +167,7 @@ router.post('/meet', async (req, res) => {
 
         // Add result
         try {
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO results (meet_id, athlete_id, place, time, time_seconds)
             VALUES (?, ?, ?, ?, ?)
           `).run(meetId, athlete.id, result.place, result.time, result.timeSeconds);
@@ -219,7 +219,7 @@ router.post('/meet', async (req, res) => {
 /**
  * Get current season meets
  */
-router.get('/meets/current-season', (req, res) => {
+router.get('/meets/current-season', async (req, res) => {
   const meets = Object.entries(CURRENT_SEASON_MEETS).map(([key, data]) => ({
     id: key,
     ...data
@@ -253,7 +253,7 @@ router.post('/auto-import/season', async (req, res) => {
       const meetData = await scrapeMeetResults(meet.url, meet.gender);
 
       // Create meet
-      const meetResult = db.prepare(`
+      const meetResult = await db.prepare(`
         INSERT INTO meets (name, date, location, distance, status)
         VALUES (?, ?, ?, ?, ?)
       `).run(meet.name, meet.date, 'NCAA D1', meetData.raceDistance || meet.distance || '5K', 'completed');
@@ -295,14 +295,14 @@ router.post('/auto-import/season', async (req, res) => {
         const resultDistance = result.raceDistance || meetData.raceDistance || '5K';
         const prField = distanceFields[resultDistance] || distanceFields['5K'];
 
-        let athlete = db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
+        let athlete = await db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
           .get(result.name, result.school);
 
         if (!athlete) {
           // Use detected gender from scraper, not config!
           const detectedGender = result.gender || meet.gender || 'M';
 
-          const athleteResult = db.prepare(`
+          const athleteResult = await db.prepare(`
             INSERT INTO athletes (
               name, school, grade, gender,
               ${prField.pr}, ${prField.pr_seconds},
@@ -326,7 +326,7 @@ router.post('/auto-import/season', async (req, res) => {
         }
 
         try {
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO results (meet_id, athlete_id, place, time, time_seconds)
             VALUES (?, ?, ?, ?, ?)
           `).run(meetId, athlete.id, result.place, result.time, result.timeSeconds);
@@ -387,7 +387,7 @@ router.post('/bulk/current-season/:meetKey', async (req, res) => {
       const meetData = await scrapeMeetResults(meet.url, meet.gender);
 
       // Create meet
-      const meetResult = db.prepare(`
+      const meetResult = await db.prepare(`
         INSERT INTO meets (name, date, location, distance, status)
         VALUES (?, ?, ?, ?, ?)
       `).run(meet.name, meet.date, 'NCAA D1', meetData.raceDistance || meet.distance || '5K', 'completed');
@@ -430,14 +430,14 @@ router.post('/bulk/current-season/:meetKey', async (req, res) => {
         const resultDistance = result.raceDistance || meetData.raceDistance || '5K';
         const prField = distanceFields[resultDistance] || distanceFields['5K'];
 
-        let athlete = db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
+        let athlete = await db.prepare('SELECT * FROM athletes WHERE name = ? AND school = ?')
           .get(result.name, result.school);
 
         if (!athlete) {
           // Use detected gender from scraper, not config!
           const detectedGender = result.gender || meet.gender || 'M';
 
-          const athleteResult = db.prepare(`
+          const athleteResult = await db.prepare(`
             INSERT INTO athletes (
               name, school, grade, gender,
               ${prField.pr}, ${prField.pr_seconds},
@@ -462,7 +462,7 @@ router.post('/bulk/current-season/:meetKey', async (req, res) => {
         } else {
           const currentPR = athlete[prField.pr_seconds];
           if (result.timeSeconds && result.timeSeconds < (currentPR || Infinity)) {
-            db.prepare(`
+            await db.prepare(`
               UPDATE athletes
               SET ${prField.pr} = ?,
                   ${prField.pr_seconds} = ?,
@@ -477,7 +477,7 @@ router.post('/bulk/current-season/:meetKey', async (req, res) => {
         }
 
         try {
-          db.prepare(`
+          await db.prepare(`
             INSERT INTO results (meet_id, athlete_id, place, time, time_seconds)
             VALUES (?, ?, ?, ?, ?)
           `).run(meetId, athlete.id, result.place, result.time, result.timeSeconds);

@@ -4,9 +4,9 @@ import db from '../db/database.js';
 const router = express.Router();
 
 // Get all meets
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const meets = db.prepare('SELECT * FROM meets ORDER BY date DESC').all();
+    const meets = await db.prepare('SELECT * FROM meets ORDER BY date DESC').all();
     res.json(meets);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -14,14 +14,14 @@ router.get('/', (req, res) => {
 });
 
 // Get single meet with results
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const meet = db.prepare('SELECT * FROM meets WHERE id = ?').get(req.params.id);
+    const meet = await db.prepare('SELECT * FROM meets WHERE id = ?').get(req.params.id);
     if (!meet) {
       return res.status(404).json({ error: 'Meet not found' });
     }
 
-    const results = db.prepare(`
+    const results = await db.prepare(`
       SELECT r.*, a.name, a.school, a.gender, a.grade
       FROM results r
       JOIN athletes a ON r.athlete_id = a.id
@@ -36,16 +36,16 @@ router.get('/:id', (req, res) => {
 });
 
 // Create new meet
-router.post('/', (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const { name, date, location, distance = '5K' } = req.body;
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO meets (name, date, location, distance)
       VALUES (?, ?, ?, ?)
     `).run(name, date, location, distance);
 
-    const newMeet = db.prepare('SELECT * FROM meets WHERE id = ?').get(result.lastInsertRowid);
+    const newMeet = await db.prepare('SELECT * FROM meets WHERE id = ?').get(result.lastInsertRowid);
     res.status(201).json(newMeet);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -53,16 +53,16 @@ router.post('/', (req, res) => {
 });
 
 // Add result to meet
-router.post('/:id/results', (req, res) => {
+router.post('/:id/results', async (req, res) => {
   try {
     const { athlete_id, place, time, time_seconds } = req.body;
 
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO results (meet_id, athlete_id, place, time, time_seconds)
       VALUES (?, ?, ?, ?, ?)
     `).run(req.params.id, athlete_id, place, time, time_seconds);
 
-    const newResult = db.prepare(`
+    const newResult = await db.prepare(`
       SELECT r.*, a.name, a.school
       FROM results r
       JOIN athletes a ON r.athlete_id = a.id
@@ -76,12 +76,12 @@ router.post('/:id/results', (req, res) => {
 });
 
 // Calculate team scores for a meet
-router.post('/:meetId/calculate-scores/:draftId', (req, res) => {
+router.post('/:meetId/calculate-scores/:draftId', async (req, res) => {
   try {
     const { meetId, draftId } = req.params;
 
     // Get all teams in this draft
-    const teams = db.prepare('SELECT * FROM teams WHERE draft_id = ?').all(draftId);
+    const teams = await db.prepare('SELECT * FROM teams WHERE draft_id = ?').all(draftId);
 
     const calculateTeamScore = db.prepare(`
       SELECT
@@ -95,21 +95,21 @@ router.post('/:meetId/calculate-scores/:draftId', (req, res) => {
     `);
 
     // Clear existing scores
-    db.prepare('DELETE FROM team_scores WHERE meet_id = ?').run(meetId);
+    await db.prepare('DELETE FROM team_scores WHERE meet_id = ?').run(meetId);
 
     const insertScore = db.prepare(`
       INSERT INTO team_scores (team_id, meet_id, total_points)
       VALUES (?, ?, ?)
     `);
 
-    teams.forEach(team => {
-      const score = calculateTeamScore.get(draftId, meetId);
+    for (const team of teams) {
+      const score = await calculateTeamScore.get(draftId, meetId);
       const points = score && score.team_id === team.id ? score.total_points : 0;
-      insertScore.run(team.id, meetId, points);
-    });
+      await insertScore.run(team.id, meetId, points);
+    }
 
     // Get updated scores
-    const scores = db.prepare(`
+    const scores = await db.prepare(`
       SELECT ts.*, t.name as team_name, t.owner_name
       FROM team_scores ts
       JOIN teams t ON ts.team_id = t.id
@@ -124,9 +124,9 @@ router.post('/:meetId/calculate-scores/:draftId', (req, res) => {
 });
 
 // Get team scores for a meet
-router.get('/:meetId/scores/:draftId', (req, res) => {
+router.get('/:meetId/scores/:draftId', async (req, res) => {
   try {
-    const scores = db.prepare(`
+    const scores = await db.prepare(`
       SELECT
         ts.*,
         t.name as team_name,
@@ -144,7 +144,7 @@ router.get('/:meetId/scores/:draftId', (req, res) => {
 });
 
 // Bulk upload results
-router.post('/:id/results/bulk', (req, res) => {
+router.post('/:id/results/bulk', async (req, res) => {
   try {
     const { results } = req.body; // Array of { athlete_id, place, time, time_seconds }
 
@@ -159,7 +159,7 @@ router.post('/:id/results/bulk', (req, res) => {
       });
     });
 
-    transaction(req.params.id, results);
+    await transaction(req.params.id, results);
 
     res.json({ message: `${results.length} results added successfully` });
   } catch (error) {
@@ -168,9 +168,9 @@ router.post('/:id/results/bulk', (req, res) => {
 });
 
 // Delete single meet
-router.delete('/:id', (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
-    const meet = db.prepare('SELECT * FROM meets WHERE id = ?').get(req.params.id);
+    const meet = await db.prepare('SELECT * FROM meets WHERE id = ?').get(req.params.id);
     if (!meet) {
       return res.status(404).json({ error: 'Meet not found' });
     }
@@ -204,7 +204,7 @@ router.delete('/:id', (req, res) => {
       return orphanedAthletes.changes;
     });
 
-    const orphanedCount = deleteTransaction();
+    const orphanedCount = await deleteTransaction();
 
     res.json({
       message: 'Meet deleted successfully',
@@ -217,9 +217,9 @@ router.delete('/:id', (req, res) => {
 });
 
 // Delete all meets
-router.delete('/', (req, res) => {
+router.delete('/', async (req, res) => {
   try {
-    const meets = db.prepare('SELECT id FROM meets').all();
+    const meets = await db.prepare('SELECT id FROM meets').all();
     const meetIds = meets.map(m => m.id);
 
     if (meetIds.length === 0) {
@@ -254,7 +254,7 @@ router.delete('/', (req, res) => {
       return orphanedAthletes.changes;
     });
 
-    const orphanedCount = deleteTransaction();
+    const orphanedCount = await deleteTransaction();
 
     res.json({
       message: `Deleted ${meetIds.length} meets successfully`,
@@ -267,16 +267,16 @@ router.delete('/', (req, res) => {
 });
 
 // Debug: Get orphaned athletes info (without deleting)
-router.get('/orphaned-athletes-info', (req, res) => {
+router.get('/orphaned-athletes-info', async (req, res) => {
   try {
     // Get counts
-    const totalAthletes = db.prepare('SELECT COUNT(*) as count FROM athletes').get();
-    const athletesWithResults = db.prepare('SELECT COUNT(DISTINCT athlete_id) as count FROM results').get();
-    const athletesWithPicks = db.prepare('SELECT COUNT(DISTINCT athlete_id) as count FROM draft_picks').get();
-    const athletesWithDraftedTeamId = db.prepare('SELECT COUNT(*) as count FROM athletes WHERE drafted_team_id IS NOT NULL').get();
+    const totalAthletes = await db.prepare('SELECT COUNT(*) as count FROM athletes').get();
+    const athletesWithResults = await db.prepare('SELECT COUNT(DISTINCT athlete_id) as count FROM results').get();
+    const athletesWithPicks = await db.prepare('SELECT COUNT(DISTINCT athlete_id) as count FROM draft_picks').get();
+    const athletesWithDraftedTeamId = await db.prepare('SELECT COUNT(*) as count FROM athletes WHERE drafted_team_id IS NOT NULL').get();
 
     // Get potentially orphaned athletes
-    const orphaned = db.prepare(`
+    const orphaned = await db.prepare(`
       SELECT a.id, a.name, a.school, a.drafted_team_id,
         (SELECT COUNT(*) FROM results WHERE athlete_id = a.id) as result_count,
         (SELECT COUNT(*) FROM draft_picks WHERE athlete_id = a.id) as pick_count
@@ -301,12 +301,12 @@ router.get('/orphaned-athletes-info', (req, res) => {
 });
 
 // Clean up orphaned results (results pointing to non-existent meets)
-router.post('/cleanup-results', (req, res) => {
+router.post('/cleanup-results', async (req, res) => {
   try {
     console.log('\n=== Cleanup Orphaned Results ===');
 
     // Find results pointing to non-existent meets
-    const orphanedResults = db.prepare(`
+    const orphanedResults = await db.prepare(`
       DELETE FROM results
       WHERE meet_id NOT IN (SELECT id FROM meets)
     `).run();
@@ -324,17 +324,17 @@ router.post('/cleanup-results', (req, res) => {
 });
 
 // Clean up orphaned athletes (standalone endpoint)
-router.post('/cleanup-athletes', (req, res) => {
+router.post('/cleanup-athletes', async (req, res) => {
   try {
     console.log('\n=== Cleanup Athletes Debug ===');
 
     // Get counts for debugging
-    const totalAthletes = db.prepare('SELECT COUNT(*) as count FROM athletes').get();
-    const athletesWithResults = db.prepare('SELECT COUNT(DISTINCT athlete_id) as count FROM results').get();
-    const athletesWithPicks = db.prepare('SELECT COUNT(DISTINCT athlete_id) as count FROM draft_picks').get();
-    const totalMeets = db.prepare('SELECT COUNT(*) as count FROM meets').get();
-    const totalResults = db.prepare('SELECT COUNT(*) as count FROM results').get();
-    const totalPicks = db.prepare('SELECT COUNT(*) as count FROM draft_picks').get();
+    const totalAthletes = await db.prepare('SELECT COUNT(*) as count FROM athletes').get();
+    const athletesWithResults = await db.prepare('SELECT COUNT(DISTINCT athlete_id) as count FROM results').get();
+    const athletesWithPicks = await db.prepare('SELECT COUNT(DISTINCT athlete_id) as count FROM draft_picks').get();
+    const totalMeets = await db.prepare('SELECT COUNT(*) as count FROM meets').get();
+    const totalResults = await db.prepare('SELECT COUNT(*) as count FROM results').get();
+    const totalPicks = await db.prepare('SELECT COUNT(*) as count FROM draft_picks').get();
 
     console.log(`Total athletes: ${totalAthletes.count}`);
     console.log(`Athletes with results: ${athletesWithResults.count}`);
@@ -344,7 +344,7 @@ router.post('/cleanup-athletes', (req, res) => {
     console.log(`Total picks: ${totalPicks.count}`);
 
     // Show sample athletes with their connections
-    const sampleAthletes = db.prepare(`
+    const sampleAthletes = await db.prepare(`
       SELECT
         a.id,
         a.name,
@@ -361,7 +361,7 @@ router.post('/cleanup-athletes', (req, res) => {
     });
 
     // Find orphaned athletes first (simpler query)
-    const orphanedList = db.prepare(`
+    const orphanedList = await db.prepare(`
       SELECT id, name, school
       FROM athletes
       WHERE id NOT IN (SELECT DISTINCT athlete_id FROM results WHERE athlete_id IS NOT NULL)
@@ -393,7 +393,7 @@ router.post('/cleanup-athletes', (req, res) => {
     });
 
     // Delete them
-    const orphanedAthletes = db.prepare(`
+    const orphanedAthletes = await db.prepare(`
       DELETE FROM athletes
       WHERE id NOT IN (SELECT DISTINCT athlete_id FROM results WHERE athlete_id IS NOT NULL)
       AND id NOT IN (SELECT DISTINCT athlete_id FROM draft_picks WHERE athlete_id IS NOT NULL)
