@@ -14,7 +14,7 @@
     "install:all": "npm install && npm install --workspace=server && npm install --workspace=client",
     "build": "npm run build --workspace=client",
     "start": "npm start --workspace=server",
-    "heroku-postbuild": "npm run build"
+    "heroku-postbuild": "npm run build && npm run init-db --workspace=server"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
