@@ -68,6 +68,7 @@ export async function initializeSchema() {
         current_pick INTEGER DEFAULT 1,
         total_rounds INTEGER DEFAULT 7,
         snake_draft BOOLEAN DEFAULT 1,
+        gender TEXT CHECK(gender IN ('M', 'F')),
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         started_at DATETIME,
         completed_at DATETIME

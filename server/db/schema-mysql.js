@@ -12,6 +12,7 @@ export async function initializeSchema() {
       current_pick INT DEFAULT 1,
       total_rounds INT DEFAULT 7,
       snake_draft TINYINT(1) DEFAULT 1,
+      gender ENUM('M', 'F'),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       started_at DATETIME,
       completed_at DATETIME
