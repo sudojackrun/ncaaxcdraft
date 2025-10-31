@@ -37,16 +37,21 @@ router.get('/', async (req, res) => {
 // Create new draft
 router.post('/', async (req, res) => {
   try {
+    console.log('📝 Creating draft with data:', req.body);
     const { name, total_rounds = 7, snake_draft = true, gender } = req.body;
 
+    console.log('Inserting draft:', { name, total_rounds, snake_draft: snake_draft ? 1 : 0, gender });
     const result = await db.prepare(`
       INSERT INTO drafts (name, total_rounds, snake_draft, gender)
       VALUES (?, ?, ?, ?)
     `).run(name, total_rounds, snake_draft ? 1 : 0, gender);
 
+    console.log('Insert result:', result);
     const draft = await db.prepare('SELECT * FROM drafts WHERE id = ?').get(result.lastInsertRowid);
+    console.log('Created draft:', draft);
     res.status(201).json(draft);
   } catch (error) {
+    console.error('❌ Error creating draft:', error);
     res.status(500).json({ error: error.message });
   }
 });
