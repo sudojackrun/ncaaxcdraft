@@ -112,9 +112,9 @@ router.post('/meet', async (req, res) => {
             detectedGender,
             result.time,
             result.timeSeconds,
-            meetData.meetName,
-            meetData.meetDate,
-            result.athleteUrl
+            meetData.meetName || null,
+            meetData.meetDate || null,
+            result.athleteUrl || null
           );
 
           athlete = { id: athleteResult.lastInsertRowid };
@@ -150,7 +150,7 @@ router.post('/meet', async (req, res) => {
                     tfrrs_url = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-              `).run(result.time, result.timeSeconds, meetData.meetName, meetData.meetDate, shouldUpdateGrade ? result.grade : null, result.athleteUrl, athlete.id);
+              `).run(result.time, result.timeSeconds, meetData.meetName || null, meetData.meetDate || null, shouldUpdateGrade ? result.grade : null, result.athleteUrl || null, athlete.id);
             } else if (shouldUpdateGrade) {
               // Only update grade (no PR update needed)
               await db.prepare(`
@@ -159,7 +159,7 @@ router.post('/meet', async (req, res) => {
                     tfrrs_url = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
-              `).run(result.grade, result.athleteUrl, athlete.id);
+              `).run(result.grade || null, result.athleteUrl || null, athlete.id);
             }
             athletesUpdated++;
           }
@@ -317,9 +317,9 @@ router.post('/auto-import/season', async (req, res) => {
             detectedGender,
             result.time,
             result.timeSeconds,
-            meetData.meetName,
-            meetData.meetDate,
-            result.athleteUrl
+            meetData.meetName || null,
+            meetData.meetDate || null,
+            result.athleteUrl || null
           );
           athlete = { id: athleteResult.lastInsertRowid };
           athletesCount++;
@@ -452,9 +452,9 @@ router.post('/bulk/current-season/:meetKey', async (req, res) => {
             detectedGender,
             result.time,
             result.timeSeconds,
-            meetData.meetName,
-            meetData.meetDate,
-            result.athleteUrl
+            meetData.meetName || null,
+            meetData.meetDate || null,
+            result.athleteUrl || null
           );
 
           athlete = { id: athleteResult.lastInsertRowid };
@@ -471,7 +471,7 @@ router.post('/bulk/current-season/:meetKey', async (req, res) => {
                   grade = COALESCE(?, grade),
                   updated_at = CURRENT_TIMESTAMP
               WHERE id = ?
-            `).run(result.time, result.timeSeconds, meetData.meetName, meetData.meetDate, result.grade, athlete.id);
+            `).run(result.time, result.timeSeconds, meetData.meetName || null, meetData.meetDate || null, result.grade || null, athlete.id);
             athletesUpdated++;
           }
         }
